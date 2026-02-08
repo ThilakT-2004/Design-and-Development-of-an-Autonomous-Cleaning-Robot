@@ -1,0 +1,199 @@
+
+const WS_URL = "ws://192.168.4.1:81";
+
+let ws = null;
+let reconnectDelay = 1000;
+let attemptCount = 0;
+let runtime = 0;
+let runtimeTimer = null;
+let currentMode = "MANUAL";
+
+/* UI getters */
+const logEl = () => document.getElementById("log");
+const connIndicator = () => document.getElementById("connIndicator");
+const waterValueEl = () => document.getElementById("waterValue");
+const batteryValueEl = () => document.getElementById("batteryValue");
+const waterBarEl = () => document.getElementById("waterBar");
+const batteryBarEl = () => document.getElementById("batteryBar");
+const runtimeEl = () => document.getElementById("runtimeValue");
+
+/* LOGGING */
+function log(msg) {
+    const el = logEl();
+    const line = document.createElement("div");
+    line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+    el.prepend(line);
+}
+
+/* UI STATUS */
+function setStatus(isConnected) {
+    const el = connIndicator();
+    el.textContent = isConnected ? "🟢 Connected" : "🔴 Disconnected";
+    el.classList.toggle("connected", isConnected);
+    el.classList.toggle("disconnected", !isConnected);
+}
+
+/* RUNTIME */
+function startTimer() {
+    if (runtimeTimer) return;
+    runtimeTimer = setInterval(() => {
+        runtime++;
+        runtimeEl().textContent = runtime + " s";
+    }, 1000);
+}
+
+function stopTimer() {
+    clearInterval(runtimeTimer);
+    runtimeTimer = null;
+    runtime = 0;
+    runtimeEl().textContent = "0 s";
+}
+
+/* SEND COMMAND */
+function sendCommand(cmd) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        log("Socket not open: " + cmd);
+        return;
+    }
+    ws.send(cmd);
+    log("TX: " + cmd);
+}
+
+function setManualControls(enabled) {
+  const buttons = [
+    "fwdBtn",
+    "backBtn",
+    "leftBtn",
+    "rightBtn",
+    "startBtn",
+    "stopBtn"
+  ];
+
+  buttons.forEach(id => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+
+    btn.disabled = !enabled;
+    btn.style.opacity = enabled ? "1" : "0.4";
+  });
+}
+
+function setAutoControls(enabled) {
+  const autoButtons = ["autoOnBtn", "autoOffBtn"];
+
+  autoButtons.forEach(id => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+
+    btn.disabled = !enabled;
+    btn.style.opacity = enabled ? "1" : "0.4";
+  });
+}
+
+function setManualMode() {
+  currentMode = "MANUAL";
+  document.getElementById("modeValue").textContent = "MANUAL";
+  setManualControls(true);
+  setAutoControls(false);
+  sendCommand("AUTO_OFF");
+  log("Manual mode enabled");
+}
+
+function setAutoMode() {
+  currentMode = "AUTO";
+  document.getElementById("modeValue").textContent = "AUTOMATIC";
+  setAutoControls(true);
+  setManualControls(false);
+  log("Automatic mode enabled");
+}
+
+function autoStart() {
+  if (currentMode !== "AUTO") return;
+  sendCommand("AUTO_ON");
+  log("Automatic ON");
+}
+
+function autoStop() {
+  if (currentMode !== "AUTO") return;
+  sendCommand("AUTO_OFF");
+  log("Automatic OFF");
+}
+
+/* CONNECT */
+function connect() {
+    log("Connecting to " + WS_URL);
+    ws = new WebSocket(WS_URL);
+    attemptCount++;
+
+    ws.onopen = () => {
+        log("Connected");
+        setStatus(true);
+        reconnectDelay = 1000;
+        startTimer();
+    };
+
+    ws.onmessage = (e) => {
+        log("RX: " + e.data);
+        try {
+            const d = JSON.parse(e.data);
+
+            if (d.water !== undefined) {
+                waterValueEl().textContent = d.water + "%";
+                waterBarEl().style.width = d.water + "%";
+            }
+            if (d.battery !== undefined) {
+                batteryValueEl().textContent = d.battery + "%";
+                batteryBarEl().style.width = d.battery + "%";
+            }
+        } catch {}
+    };
+
+    ws.onclose = () => {
+        log("Closed. Reconnecting…");
+        setStatus(false);
+        stopTimer();
+        setTimeout(connect, reconnectDelay);
+        reconnectDelay = Math.min(10000, reconnectDelay * 1.7);
+    };
+}
+
+/* INIT */
+document.addEventListener("DOMContentLoaded", () => {
+    
+    document.getElementById("manualBtn").onclick = setManualMode;
+    document.getElementById("autoBtn").onclick   = setAutoMode;
+
+    document.getElementById("autoOnBtn").onclick  = autoStart;
+    document.getElementById("autoOffBtn").onclick = autoStop;
+
+    // Default state
+    setManualMode();
+
+    document.getElementById("startBtn").onclick = () => sendCommand("START");
+    document.getElementById("stopBtn").onclick  = () => sendCommand("STOP");
+
+    document.getElementById("leftBtn").onclick  = () => sendCommand("LEFT");
+    document.getElementById("rightBtn").onclick = () => sendCommand("RIGHT");
+    document.getElementById("fwdBtn").onclick   = () => sendCommand("FORWARD");
+    document.getElementById("backBtn").onclick  = () => sendCommand("BACKWARD");
+
+    /* VACUUM CONTROLS */
+    document.getElementById("vacuumOnBtn").onclick  = () => sendCommand("VACON");
+    document.getElementById("vacuumOffBtn").onclick = () => sendCommand("VACOFF");
+
+    /* MOP CONTROLS */
+    document.getElementById("mopOnBtn").onclick  = () => sendCommand("MOP_ON");
+    document.getElementById("mopOffBtn").onclick = () => sendCommand("MOP_OFF");
+
+    /* SPEED SLIDER */
+    const slider = document.getElementById("speedSlider");
+    const label = document.getElementById("speedLabel");
+    slider.oninput = (e) => label.textContent = e.target.value;
+    slider.onchange = (e) => sendCommand("SPEED:" + e.target.value);
+
+    /* RECONNECT */
+    document.getElementById("reconnectBtn").onclick = connect;
+
+    connect();
+});
+
