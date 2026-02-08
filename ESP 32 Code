@@ -1,0 +1,338 @@
+#include <WiFi.h>
+#include <WebSocketsServer.h>
+#include <ArduinoJson.h>
+
+// =============================== //
+// GLOBAL OBJECTS //
+// =============================== //
+WebSocketsServer webSocket(81);
+
+// =============================== //
+// GLOBAL VARIABLES //
+// =============================== //
+String incomingCmd = "";
+bool newCmdReady = false;
+bool autoMode = false;
+
+unsigned long lastTelemetry = 0;
+unsigned long autoTimer = 0;
+
+// =============================== //
+// FUNCTION PROTOTYPES (IMPORTANT) //
+// =============================== //
+void runAutoMode();
+void handleCommand(String cmd);
+
+// =============================== //
+// PIN DEFINITIONS //
+// =============================== //
+#define WATER_PIN    34   // ADC1
+#define BATTERY_PIN  35   // ADC1
+#define IR_PIN       27
+
+#define TRIG_FRONT   13
+#define ECHO_FRONT   23
+
+#define TRIG_LEFT    22
+#define ECHO_LEFT    21
+
+#define TRIG_RIGHT   19
+#define ECHO_RIGHT   18
+
+#define VAC_IN1 14
+#define VAC_IN2 26
+#define VAC_IN3 4
+
+#define MOP_IN1 25
+#define MOP_IN2 33
+#define MOP_IN3 32
+
+// =============================== //
+// SERIAL2 (ESP32 → UNO) //
+// =============================== //
+#define RXp2 16   // Arduino TX //
+#define TXp2 17   // Arduino RX //
+
+// =============================== //
+// ULTRASONIC FUNCTION //
+// =============================== //
+long readUltrasonic(int trig, int echo) {
+  digitalWrite(trig, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trig, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trig, LOW);
+  long duration = pulseIn(echo, HIGH, 30000);
+  if (duration == 0) return 0;
+  return duration * 0.034 / 2;
+}
+
+// =============================== //
+// ACTUATORS //
+// =============================== //
+void vacuumOn() {
+  digitalWrite(VAC_IN1, HIGH);
+  digitalWrite(VAC_IN2, LOW);
+  digitalWrite(VAC_IN3, HIGH);
+}
+
+void vacuumOff() {
+  digitalWrite(VAC_IN1, LOW);
+  digitalWrite(VAC_IN2, LOW);
+  digitalWrite(VAC_IN3, LOW);
+}
+
+void mopStart() {
+  digitalWrite(MOP_IN1, HIGH);
+  digitalWrite(MOP_IN2, LOW);
+  digitalWrite(MOP_IN3, HIGH);
+}
+
+void mopStop() {
+  digitalWrite(MOP_IN1, LOW);
+  digitalWrite(MOP_IN2, LOW);
+  digitalWrite(MOP_IN3, LOW);
+}
+
+// =============================== //
+// SERIAL → ARDUINO //
+// =============================== //
+void sendToArduino(const String &cmd) {
+  Serial2.println(cmd);
+  Serial.print("→ UNO: ");
+  Serial.println(cmd);
+}
+
+// =============================== //
+// WEBSOCKET HANDLER //
+// =============================== //
+void onWsEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t len) {
+
+  if (type == WStype_TEXT) {
+    incomingCmd = String((char*)payload);
+    newCmdReady = true;
+  }
+
+  if (type == WStype_CONNECTED) {
+    webSocket.sendTXT(num, "{\"status\":\"connected\"}");
+  }
+
+  if (type == WStype_DISCONNECTED) {
+    autoMode = false;
+    sendToArduino("S");
+    vacuumOff();
+    mopStop();
+  }
+}
+
+// =============================== //
+// COMMAND HANDLER //
+// =============================== //
+void handleCommand(String cmd) {
+  cmd.trim();
+  Serial.print("CMD: ");
+  Serial.println(cmd);
+
+  if (cmd == "AUTO_ON") {
+    autoMode = true;
+    vacuumOn();
+    mopStart();
+    sendToArduino("A");
+    return;
+  }
+
+  if (cmd == "AUTO_OFF") {
+    autoMode = false;
+    sendToArduino("S");
+    vacuumOff();
+    mopStop();
+    return;
+  }
+
+  // Manual controls
+  if (cmd == "F" || cmd == "FORWARD") sendToArduino("F");
+  else if (cmd == "B" || cmd == "BACKWARD") sendToArduino("B");
+  else if (cmd == "L" || cmd == "LEFT") sendToArduino("L");
+  else if (cmd == "R" || cmd == "RIGHT") sendToArduino("R");
+  else if (cmd == "S" || cmd == "STOP") sendToArduino("S");
+  else if (cmd == "VACON") vacuumOn();
+  else if (cmd == "VACOFF") vacuumOff();
+  else if (cmd == "MOP_ON") mopStart();
+  else if (cmd == "MOP_OFF") mopStop();
+
+  // ================= SPEED CONTROL ================= //
+  if (cmd.startsWith("SPEED:")) {
+    String speedVal = cmd.substring(6); // after "SPEED:"
+    sendToArduino("V" + speedVal);      // forward to UNO
+    Serial.print("Speed forwarded to UNO: ");
+    Serial.println(speedVal);
+    return;
+}
+
+}
+
+// =============================== //
+// SETUP //
+// =============================== //
+void setup() {
+  Serial.begin(115200);
+  Serial2.begin(9600, SERIAL_8N1, RXp2, TXp2);
+
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP("CLEANING BOT", "12345678");
+
+  webSocket.begin();
+  webSocket.onEvent(onWsEvent);
+
+  pinMode(IR_PIN, INPUT);
+  pinMode(WATER_PIN, INPUT);
+  pinMode(BATTERY_PIN, INPUT);
+
+  pinMode(TRIG_FRONT, OUTPUT);
+  pinMode(ECHO_FRONT, INPUT);
+  pinMode(TRIG_LEFT, OUTPUT);
+  pinMode(ECHO_LEFT, INPUT);
+  pinMode(TRIG_RIGHT, OUTPUT);
+  pinMode(ECHO_RIGHT, INPUT);
+
+  pinMode(VAC_IN1, OUTPUT);
+  pinMode(VAC_IN2, OUTPUT);
+  pinMode(VAC_IN3, OUTPUT);
+  pinMode(MOP_IN1, OUTPUT);
+  pinMode(MOP_IN2, OUTPUT);
+  pinMode(MOP_IN3, OUTPUT);
+
+  vacuumOff();
+  mopStop();
+
+  Serial.println("ESP32 READY");
+}
+
+// =============================== //
+// AUTO MODE LOGIC (COVERAGE SAFE) //
+// =============================== //
+void runAutoMode() {
+
+  if (!autoMode) return;
+  if (millis() - autoTimer < 250) return;
+  autoTimer = millis();
+
+  long front = readUltrasonic(TRIG_FRONT, ECHO_FRONT);
+  long left  = readUltrasonic(TRIG_LEFT,  ECHO_LEFT);
+  long right = readUltrasonic(TRIG_RIGHT, ECHO_RIGHT);
+  int ir     = digitalRead(IR_PIN);
+
+  const int OBSTACLE = 15;
+  char lastTurn = 'N';
+  // Ignore bad readings
+  if (front <= 0 || left <= 0 || right <= 0) return;
+
+  // =============================== //
+  // IR SENSOR → EMERGENCY AVOID //
+  // =============================== //
+  if (ir == 0) {
+
+    sendToArduino("S");
+    delay(1000);
+
+    sendToArduino("B");
+    delay(2500);
+
+    sendToArduino("S");
+    delay(1000);
+
+    // Force alternate direction
+    if (lastTurn == 'L') {
+      sendToArduino("R");
+      lastTurn = 'R';
+    } else {
+      sendToArduino("L");
+      lastTurn = 'L';
+    }
+
+    delay(10000);
+    sendToArduino("F");
+    delay(300);
+    return;
+  }
+
+  // =============================== //
+  // FRONT + RIGHT BLOCKED → LEFT //
+  // =============================== //
+  if (front < OBSTACLE && right < OBSTACLE) {
+
+    sendToArduino("S");
+    delay(100);
+
+    if (lastTurn == 'L') {
+      sendToArduino("R");
+      lastTurn = 'R';
+    } else {
+      sendToArduino("L");
+      lastTurn = 'L';
+    }
+
+    delay(1000);
+    sendToArduino("F");
+    delay(random(250, 450));
+    return;
+  }
+
+  // =============================== //
+  // FRONT + LEFT BLOCKED → RIGHT //
+  // =============================== //
+  if (front < OBSTACLE && left < OBSTACLE) {
+
+    sendToArduino("S");
+    delay(100);
+
+    if (lastTurn == 'R') {
+      sendToArduino("L");
+      lastTurn = 'L';
+    } else {
+      sendToArduino("R");
+      lastTurn = 'R';
+    }
+
+    delay(1000);
+    sendToArduino("F");
+    delay(random(250, 450));
+    return;
+  }
+
+  // =============================== //
+  // CLEAR PATH → MOVE FORWARD //
+  // =============================== //
+  sendToArduino("F");
+}
+
+// =============================== //
+// MAIN LOOP //
+// =============================== //
+void loop() {
+
+  webSocket.loop();
+
+  if (newCmdReady) {
+    handleCommand(incomingCmd);
+    newCmdReady = false;
+  }
+
+  runAutoMode();
+
+  if (millis() - lastTelemetry > 500) {
+    lastTelemetry = millis();
+
+    StaticJsonDocument<256> doc;
+    doc["u1"] = readUltrasonic(TRIG_FRONT, ECHO_FRONT);
+    doc["u2"] = readUltrasonic(TRIG_LEFT, ECHO_LEFT);
+    doc["u3"] = readUltrasonic(TRIG_RIGHT, ECHO_RIGHT);
+    doc["ir"] = digitalRead(IR_PIN);
+    doc["water"] = map(analogRead(WATER_PIN), 0, 4095, 0, 100);
+    doc["battery"] = map(analogRead(BATTERY_PIN), 2600, 4095, 0, 100);
+
+    char buffer[256];
+    serializeJson(doc, buffer);
+    webSocket.broadcastTXT(buffer);
+  }
+}
