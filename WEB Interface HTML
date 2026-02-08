@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>CleanBot Controller</title>
+
+<!-- EB Garamond font -->
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;600&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+<div class="app">
+
+    <div class="topbar">
+        <div class="brand">
+            <h1>CleanBot Controller</h1>
+            <p>WebSocket Control Panel</p>
+        </div>
+
+        <div class="status-panel">
+            <span id="connIndicator" class="pill disconnected">🔴 Disconnected</span>
+            <button id="reconnectBtn" class="small">Reconnect</button>
+        </div>
+    </div>
+
+    <div class="grid">
+        <!-- MODE SELECTION -->
+        <div class="card">
+        <h3>Control Mode</h3>
+        <div style="display:flex; gap:12px; margin-top:10px;">
+            <button id="manualBtn" class="btn">Manual Mode</button>
+            <button id="autoBtn" class="btn stop">Automatic Mode</button>
+        </div>
+        </div>
+        
+        <!-- AUTOMATIC CONTROL PANEL -->
+        <div class="card">
+        <h3>Automatic Control</h3>
+        <div style="display:flex; gap:12px; margin-top:10px;">
+            <button id="autoOnBtn" class="btn">Auto ON</button>
+            <button id="autoOffBtn" class="btn stop">Auto OFF</button>
+        </div>
+        </div>
+
+
+
+        <!-- LEFT SECTION — Controls -->
+        <div class="card controls">
+            <h2>Movement</h2>
+            
+            <div class="big-buttons">
+                <button id="startBtn" class="btn start">Start</button>
+                <button id="stopBtn" class="btn stop">Stop</button>
+            </div>
+
+            <div class="joystick">
+                <button id="fwdBtn" class="circle up">⬆</button>
+                <button id="leftBtn" class="circle left">⬅</button>
+                <button id="rightBtn" class="circle right">➡</button>
+                <button id="backBtn" class="circle down">⬇</button>
+            </div>
+
+             <h2>Vacuum Control</h2>
+            <div class="row">
+                <button id="vacuumOnBtn" class="btn wide">VACUUM ON</button>
+                <button id="vacuumOffBtn" class="btn wide" style="background:#ef4444;color:white">VACUUM OFF</button>
+            </div>
+
+            <h2>Mop Control</h2>
+            <div class="row">
+                <button id="mopOnBtn" class="btn wide">MOP ON</button>
+                <button id="mopOffBtn" class="btn wide" style="background:#ef4444;color:white">MOP OFF</button>
+            </div>
+
+            <h2>Motor Speed Control</h2>
+            <div class="speed-block">
+                <label>Motor Speed: <span id="speedLabel"> 50 </span> </label>
+                <input id="speedSlider" type="range" min="0" max="200" value="100">
+            </div>
+        </div>
+
+        <!-- RIGHT SECTION — Telemetry -->
+        <div class="card">
+            <h2>Telemetry</h2>
+            
+            <div class="tele-row">
+                <div>
+                    <div class="tele-title">Mode</div>
+                    <div class="tele-value" id="modeValue">MANUAL</div>
+                </div>
+            </div>
+
+            <div class="tele-row">
+                <div class="tele-card">
+                    <div class="tele-title">Water Level</div>
+                    <div id="waterValue" class="tele-value">--%</div>
+                    <div class="bar"><div id="waterBar" class="fill"></div></div>
+                </div>
+
+                <div class="tele-card">
+                    <div class="tele-title">Battery</div>
+                    <div id="batteryValue" class="tele-value">--%</div>
+                    <div class="bar"><div id="batteryBar" class="fill"></div></div>
+                </div>
+            </div>
+
+            <div class="tele-row">
+                <div class="tele-card">
+                    <div class="tele-title">Runtime</div>
+                    <div id="runtimeValue" class="tele-value">0 s</div>
+                </div>
+            </div>
+
+            <h3>Log</h3>
+            <div id="log" class="log"></div>
+        </div>
+    </div>
+
+    <div class="footer">© 2025 CleanBot</div>
+
+</div>
+
+<script src="script.js"></script>
+
+</body>
+</html>
