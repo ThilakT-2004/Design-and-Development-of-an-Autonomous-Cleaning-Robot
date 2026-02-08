@@ -1,0 +1,119 @@
+#include <AFMotor.h>
+
+// Motors
+AF_DCMotor motor1(1); // Front Left
+AF_DCMotor motor2(2); // Front Right
+AF_DCMotor motor3(3); // Rear Left
+AF_DCMotor motor4(4); // Rear Right
+
+int currentSpeed = 150;
+const float TURN_RATIO = 0.1;
+
+void setup() {
+  Serial.begin(9600);
+
+  // Set speed ONCE
+  motor1.setSpeed(currentSpeed);
+  motor2.setSpeed(currentSpeed);
+  motor3.setSpeed(currentSpeed);
+  motor4.setSpeed(currentSpeed);
+
+  stopMotors();
+  Serial.println("UNO READY");
+}
+
+void loop() {
+  if (Serial.available()) {
+    String cmd = Serial.readStringUntil('\n');
+    cmd.trim();
+    cmd.toUpperCase();   // makes command case-insensitive
+
+    Serial.print("CMD: ");
+    Serial.println(cmd);
+
+     // SPEED COMMAND
+    if (cmd.startsWith("V")) {
+      currentSpeed = cmd.substring(1).toInt();
+      currentSpeed = constrain(currentSpeed, 0, 255);
+
+      Serial.print("Speed set to: ");
+      Serial.println(currentSpeed);
+      return;
+    }
+
+    if (cmd == "F" || cmd == "FORWARD") {
+      forward();
+    }
+    else if (cmd == "B" || cmd == "BACKWARD") {
+      backward();
+    }
+    else if (cmd == "L" || cmd == "LEFT") {
+      left();
+    }
+    else if (cmd == "R" || cmd == "RIGHT") {
+      right();
+    }
+    else if (cmd == "S" || cmd == "STOP") {
+      stopMotors();
+    }
+    else {
+      Serial.println("Invalid Command");
+    }
+  }
+}
+
+// -------- MOTOR FUNCTIONS -------- //
+// ================= MOVEMENT FUNCTIONS ================= //
+void forward() {
+  setAllSpeed(currentSpeed);
+  runAll(FORWARD);
+}
+
+void backward() {
+  setAllSpeed(currentSpeed);
+  runAll(BACKWARD);
+}
+
+void left() {
+  int slowSpeed = currentSpeed * TURN_RATIO;
+
+  motor2.setSpeed(slowSpeed); // LEFT SIDE SLOW
+  motor3.setSpeed(slowSpeed);
+  motor1.setSpeed(currentSpeed); // RIGHT SIDE FAST
+  motor4.setSpeed(currentSpeed);
+
+  runAll(FORWARD);
+}
+
+void right() {
+  int slowSpeed = currentSpeed * TURN_RATIO;
+
+  motor2.setSpeed(currentSpeed);
+  motor3.setSpeed(currentSpeed);
+  motor1.setSpeed(slowSpeed);
+  motor4.setSpeed(slowSpeed);
+
+  runAll(FORWARD);
+}
+
+// ================= HELPERS ================= //
+void setAllSpeed(int spd) {
+  motor1.setSpeed(spd);
+  motor2.setSpeed(spd);
+  motor3.setSpeed(spd);
+  motor4.setSpeed(spd);
+}
+
+void runAll(uint8_t dir) {
+  motor1.run(dir);
+  motor2.run(dir);
+  motor3.run(dir);
+  motor4.run(dir);
+}
+
+void stopMotors() {
+  motor1.run(RELEASE);
+  motor2.run(RELEASE);
+  motor3.run(RELEASE);
+  motor4.run(RELEASE);
+}
